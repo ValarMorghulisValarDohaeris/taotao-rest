@@ -1,13 +1,19 @@
 package com.taotao.rest.service.impl;
 
+import com.sun.org.apache.regexp.internal.RE;
+import com.taotao.common.utils.JsonUtils;
 import com.taotao.mapper.TbItemCatMapper;
 import com.taotao.pojo.TbItemCat;
 import com.taotao.pojo.TbItemCatExample;
+import com.taotao.rest.dao.JedisClient;
 import com.taotao.rest.pojo.CatNode;
 import com.taotao.rest.pojo.CatResult;
 import com.taotao.rest.service.ItemCatService;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import redis.clients.jedis.JedisPool;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,12 +26,41 @@ public class ItemCatServiceImpl implements ItemCatService {
 
     @Autowired
     private TbItemCatMapper catMapper;
+    @Autowired
+    private JedisClient jedisClient;
+
+    @Value("${INDEX_ITEMCAT_REDIS_KEY}")
+    private String INDEX_ITEMCAT_REDIS_KEY;
 
     @Override
     public CatResult getItemCatList() {
         CatResult catResult = new CatResult();
+
+        try{
+            String result = jedisClient.hget(INDEX_ITEMCAT_REDIS_KEY, "itemCatList");
+            if(!StringUtils.isBlank(result)){
+                System.out.println("命中缓存");
+                List<CatNode> resultList = JsonUtils.jsonToList(result,CatNode.class);
+                catResult.setData(resultList);
+                return catResult;
+            }
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+
+        System.out.println("未命中缓存");
+
         //查询分类列表
-        catResult.setData(getCatList(0));
+        List<?> itemCatList = getCatList(0);
+        catResult.setData(itemCatList);
+
+        try{
+            String cacheString = JsonUtils.objectToJson(itemCatList);
+            jedisClient.hset(INDEX_ITEMCAT_REDIS_KEY,"itemCatList",cacheString);
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+
         return catResult;
     }
 
